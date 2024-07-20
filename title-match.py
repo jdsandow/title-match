@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, simpledialog
 import pandas as pd
 import Levenshtein
 import re
@@ -82,6 +82,13 @@ class CSVMatcherApp:
         text = re.sub(r'[' + chars + ']', '', text)
         return text.strip()
     
+    def prompt_user_choice(self, value1, options):
+        prompt = f"Choose the best match for '{value1}':\n"
+        for i, option in enumerate(options):
+            prompt += f"{i + 1}. {option}\n"
+        choice = simpledialog.askinteger("Choose Match", prompt, minvalue=1, maxvalue=len(options))
+        return options[choice - 1] if choice else None
+    
     def match_files(self):
         file1_path = self.file1_path.get()
         file2_path = self.file2_path.get()
@@ -118,12 +125,31 @@ class CSVMatcherApp:
         
         for i, value1 in df1['cleaned_one'].items():
             distances = df2['cleaned_two'].apply(lambda x: Levenshtein.distance(value1, x))
-            min_distance = distances.min()
-            best_match = df2.loc[distances.idxmin(), col2]
+            min_distances = distances.nsmallest(2)
+            matches = df2.loc[min_distances.index, col2]
+            
+            if min_distances.iloc[0] == 0:
+                best_match = matches.iloc[0]
+                min_distance = 0
+            elif min_distances.iloc[0] <= 5 and len(min_distances) > 1 and min_distances.iloc[1] <= 5:
+                best_match = self.prompt_user_choice(value1, matches.tolist())
+                min_distance = min_distances[matches == best_match].values[0] if best_match else None
+                if not best_match:
+                    best_match = None
+                    min_distance = None
+            elif min_distances.iloc[0] <= 5:
+                best_match = matches.iloc[0]
+                min_distance = min_distances.iloc[0]
+            else:
+                best_match = None
+                min_distance = None
             
             df1.at[i, 'Matched'] = best_match
             df1.at[i, 'Distance'] = min_distance
         
+        df1['Distance'] = df1['Distance'].apply(lambda x: '' if x is None else x)
+        df1['Matched'] = df1['Matched'].apply(lambda x: '' if x is None else x)
+
         output_file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
         if output_file:
             df1.to_csv(output_file, index=False)
