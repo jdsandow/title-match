@@ -13,6 +13,7 @@ class CSVMatcherApp:
         self.file2_path = tk.StringVar()
         self.col1 = tk.StringVar()
         self.col2 = tk.StringVar()
+        self.value_col2 = tk.StringVar()
         self.cutoff_words = tk.StringVar(value="fka, aka")
         self.words_to_strip = tk.StringVar(value="The, And")
         self.chars_to_strip = tk.StringVar(value=",.:")
@@ -38,17 +39,21 @@ class CSVMatcherApp:
         tk.Label(self.root, text="Column from File 2:").grid(row=3, column=0, sticky=tk.W)
         self.col2_dropdown = ttk.Combobox(self.root, textvariable=self.col2)
         self.col2_dropdown.grid(row=3, column=1)
+
+        tk.Label(self.root, text="Value from File 2:").grid(row=4, column=0, sticky=tk.W)
+        self.value_col2_dropdown = ttk.Combobox(self.root, textvariable=self.value_col2)
+        self.value_col2_dropdown.grid(row=4, column=1)
         
-        tk.Label(self.root, text="Cut-off Words (comma-separated):").grid(row=4, column=0, sticky=tk.W)
-        tk.Entry(self.root, textvariable=self.cutoff_words).grid(row=4, column=1)
+        tk.Label(self.root, text="Cut-off Words (comma-separated):").grid(row=5, column=0, sticky=tk.W)
+        tk.Entry(self.root, textvariable=self.cutoff_words).grid(row=5, column=1)
         
-        tk.Label(self.root, text="Words to Strip (comma-separated):").grid(row=5, column=0, sticky=tk.W)
-        tk.Entry(self.root, textvariable=self.words_to_strip).grid(row=5, column=1)
+        tk.Label(self.root, text="Words to Strip (comma-separated):").grid(row=6, column=0, sticky=tk.W)
+        tk.Entry(self.root, textvariable=self.words_to_strip).grid(row=6, column=1)
         
-        tk.Label(self.root, text="Characters to Strip (without spaces):").grid(row=6, column=0, sticky=tk.W)
-        tk.Entry(self.root, textvariable=self.chars_to_strip).grid(row=6, column=1)
+        tk.Label(self.root, text="Characters to Strip (without spaces):").grid(row=7, column=0, sticky=tk.W)
+        tk.Entry(self.root, textvariable=self.chars_to_strip).grid(row=7, column=1)
         
-        tk.Button(self.root, text="Match", command=self.match_files).grid(row=7, column=0, columnspan=3)
+        tk.Button(self.root, text="Match", command=self.match_files).grid(row=8, column=0, columnspan=3)
     
     def browse_file1(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
@@ -61,6 +66,7 @@ class CSVMatcherApp:
         if file_path:
             self.file2_path.set(file_path)
             self.load_columns(file_path, self.col2_dropdown)
+            self.load_columns(file_path, self.value_col2_dropdown)
     
     def load_columns(self, file_path, dropdown):
         try:
@@ -107,11 +113,12 @@ class CSVMatcherApp:
         file2_path = self.file2_path.get()
         col1 = self.col1.get()
         col2 = self.col2.get()
+        value_col2 = self.value_col2.get()
         cutoff_words = self.cutoff_words.get()
         words_to_strip = self.words_to_strip.get()
         chars_to_strip = self.chars_to_strip.get()
         
-        if not all([file1_path, file2_path, col1, col2]):
+        if not all([file1_path, file2_path, col1, col2, value_col2]):
             messagebox.showerror("Error", "Please fill all fields")
             return
         
@@ -124,7 +131,7 @@ class CSVMatcherApp:
             messagebox.showerror("Error", f"Error reading files: {e}")
             return
         
-        if col1 not in self.df1.columns or col2 not in self.df2.columns:
+        if col1 not in self.df1.columns or col2 not in self.df2.columns or value_col2 not in self.df2.columns:
             messagebox.showerror("Error", "Invalid column names")
             return
         
@@ -136,33 +143,45 @@ class CSVMatcherApp:
         
         df1['Matched'] = None
         df1['Distance'] = None
+        df1[value_col2] = None
         
         for i, value1 in df1['cleaned_one'].items():
             distances = df2['cleaned_two'].apply(lambda x: Levenshtein.distance(value1, x))
             min_distances = distances.nsmallest(2)
-            matches = df2.loc[min_distances.index, col2]
+            matches = df2.loc[min_distances.index]
             
             if min_distances.iloc[0] == 0:
-                best_match = matches.iloc[0]
+                best_match = matches.iloc[0][col2]
                 min_distance = 0
+                value_from_file2 = matches.iloc[0][value_col2]
             elif min_distances.iloc[0] <= 5 and len(min_distances) > 1 and min_distances.iloc[1] <= 5:
-                best_match = self.prompt_user_choice(value1, matches.tolist())
-                min_distance = min_distances[matches == best_match].values[0] if best_match else None
-                if not best_match:
+                options = matches.apply(lambda row: f"{row[col2]}: {row.to_dict()}", axis=1).tolist()
+                best_match_str = self.prompt_user_choice(value1, options)
+                if best_match_str:
+                    best_match_index = options.index(best_match_str)
+                    best_match = matches.iloc[best_match_index][col2]
+                    min_distance = min_distances.iloc[best_match_index]
+                    value_from_file2 = matches.iloc[best_match_index][value_col2]
+                else:
                     best_match = None
                     min_distance = None
+                    value_from_file2 = None
             elif min_distances.iloc[0] <= 5:
-                best_match = matches.iloc[0]
+                best_match = matches.iloc[0][col2]
                 min_distance = min_distances.iloc[0]
+                value_from_file2 = matches.iloc[0][value_col2]
             else:
                 best_match = None
                 min_distance = None
+                value_from_file2 = None
             
             df1.at[i, 'Matched'] = best_match
             df1.at[i, 'Distance'] = min_distance
+            df1.at[i, value_col2] = value_from_file2
         
         df1['Distance'] = df1['Distance'].apply(lambda x: '' if x is None else x)
         df1['Matched'] = df1['Matched'].apply(lambda x: '' if x is None else x)
+        df1[value_col2] = df1[value_col2].apply(lambda x: '' if x is None else x)
 
         output_file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
         if output_file:
