@@ -13,6 +13,7 @@ class CSVMatcherApp:
         self.file2_path = tk.StringVar()
         self.col1 = tk.StringVar()
         self.col2 = tk.StringVar()
+        self.cutoff_words = tk.StringVar(value="fka, aka")
         self.words_to_strip = tk.StringVar(value="The, And")
         self.chars_to_strip = tk.StringVar(value=",.:")
         
@@ -38,13 +39,16 @@ class CSVMatcherApp:
         self.col2_dropdown = ttk.Combobox(self.root, textvariable=self.col2)
         self.col2_dropdown.grid(row=3, column=1)
         
-        tk.Label(self.root, text="Words to Strip (comma-separated):").grid(row=4, column=0, sticky=tk.W)
-        tk.Entry(self.root, textvariable=self.words_to_strip).grid(row=4, column=1)
+        tk.Label(self.root, text="Cut-off Words (comma-separated):").grid(row=4, column=0, sticky=tk.W)
+        tk.Entry(self.root, textvariable=self.cutoff_words).grid(row=4, column=1)
         
-        tk.Label(self.root, text="Characters to Strip (without spaces):").grid(row=5, column=0, sticky=tk.W)
-        tk.Entry(self.root, textvariable=self.chars_to_strip).grid(row=5, column=1)
+        tk.Label(self.root, text="Words to Strip (comma-separated):").grid(row=5, column=0, sticky=tk.W)
+        tk.Entry(self.root, textvariable=self.words_to_strip).grid(row=5, column=1)
         
-        tk.Button(self.root, text="Match", command=self.match_files).grid(row=6, column=0, columnspan=3)
+        tk.Label(self.root, text="Characters to Strip (without spaces):").grid(row=6, column=0, sticky=tk.W)
+        tk.Entry(self.root, textvariable=self.chars_to_strip).grid(row=6, column=1)
+        
+        tk.Button(self.root, text="Match", command=self.match_files).grid(row=7, column=0, columnspan=3)
     
     def browse_file1(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
@@ -72,7 +76,16 @@ class CSVMatcherApp:
         except Exception as e:
             messagebox.showerror("Error", f"Error reading file: {e}")
     
-    def strip_text(self, text, words, chars):
+    def process_cutoff(self, text, words):
+        cut_positions = [text.lower().find(word.strip().lower()) for word in words.split(',') if word.strip().lower() in text.lower()]
+        if cut_positions:
+            cutoff_index = min(cut_positions)
+            text = text[:cutoff_index]
+        return text
+
+    def strip_text(self, text, cutoff_words, words, chars):
+        # Apply cutoff
+        text = self.process_cutoff(text, cutoff_words)
         # Strip words
         for word in words.split(','):
             word = word.strip()
@@ -94,6 +107,7 @@ class CSVMatcherApp:
         file2_path = self.file2_path.get()
         col1 = self.col1.get()
         col2 = self.col2.get()
+        cutoff_words = self.cutoff_words.get()
         words_to_strip = self.words_to_strip.get()
         chars_to_strip = self.chars_to_strip.get()
         
@@ -117,8 +131,8 @@ class CSVMatcherApp:
         df1 = self.df1.copy()
         df2 = self.df2.copy()
         
-        df1['cleaned_one'] = df1[col1].apply(lambda x: self.strip_text(str(x), words_to_strip, chars_to_strip))
-        df2['cleaned_two'] = df2[col2].apply(lambda x: self.strip_text(str(x), words_to_strip, chars_to_strip))
+        df1['cleaned_one'] = df1[col1].apply(lambda x: self.strip_text(str(x), cutoff_words, words_to_strip, chars_to_strip))
+        df2['cleaned_two'] = df2[col2].apply(lambda x: self.strip_text(str(x), cutoff_words, words_to_strip, chars_to_strip))
         
         df1['Matched'] = None
         df1['Distance'] = None
