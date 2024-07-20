@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import pandas as pd
 import Levenshtein
-import os
+import re
 
 class CSVMatcherApp:
     def __init__(self, root):
@@ -13,6 +13,8 @@ class CSVMatcherApp:
         self.file2_path = tk.StringVar()
         self.col1 = tk.StringVar()
         self.col2 = tk.StringVar()
+        self.words_to_strip = tk.StringVar(value="The, And")
+        self.chars_to_strip = tk.StringVar(value=",.:")
         
         self.df1 = None
         self.df2 = None
@@ -36,7 +38,13 @@ class CSVMatcherApp:
         self.col2_dropdown = ttk.Combobox(self.root, textvariable=self.col2)
         self.col2_dropdown.grid(row=3, column=1)
         
-        tk.Button(self.root, text="Match", command=self.match_files).grid(row=4, column=0, columnspan=3)
+        tk.Label(self.root, text="Words to Strip (comma-separated):").grid(row=4, column=0, sticky=tk.W)
+        tk.Entry(self.root, textvariable=self.words_to_strip).grid(row=4, column=1)
+        
+        tk.Label(self.root, text="Characters to Strip (without spaces):").grid(row=5, column=0, sticky=tk.W)
+        tk.Entry(self.root, textvariable=self.chars_to_strip).grid(row=5, column=1)
+        
+        tk.Button(self.root, text="Match", command=self.match_files).grid(row=6, column=0, columnspan=3)
     
     def browse_file1(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
@@ -64,11 +72,23 @@ class CSVMatcherApp:
         except Exception as e:
             messagebox.showerror("Error", f"Error reading file: {e}")
     
+    def strip_text(self, text, words, chars):
+        # Strip words
+        for word in words.split(','):
+            word = word.strip()
+            text = re.sub(r'\b' + re.escape(word) + r'\b', '', text, flags=re.IGNORECASE)
+        # Strip characters
+        chars = re.escape(chars)
+        text = re.sub(r'[' + chars + ']', '', text)
+        return text.strip()
+    
     def match_files(self):
         file1_path = self.file1_path.get()
         file2_path = self.file2_path.get()
         col1 = self.col1.get()
         col2 = self.col2.get()
+        words_to_strip = self.words_to_strip.get()
+        chars_to_strip = self.chars_to_strip.get()
         
         if not all([file1_path, file2_path, col1, col2]):
             messagebox.showerror("Error", "Please fill all fields")
@@ -90,11 +110,14 @@ class CSVMatcherApp:
         df1 = self.df1.copy()
         df2 = self.df2.copy()
         
+        df1['cleaned_one'] = df1[col1].apply(lambda x: self.strip_text(str(x), words_to_strip, chars_to_strip))
+        df2['cleaned_two'] = df2[col2].apply(lambda x: self.strip_text(str(x), words_to_strip, chars_to_strip))
+        
         df1['Matched'] = None
         df1['Distance'] = None
         
-        for i, value1 in df1[col1].items():
-            distances = df2[col2].apply(lambda x: Levenshtein.distance(value1, x))
+        for i, value1 in df1['cleaned_one'].items():
+            distances = df2['cleaned_two'].apply(lambda x: Levenshtein.distance(value1, x))
             min_distance = distances.min()
             best_match = df2.loc[distances.idxmin(), col2]
             
