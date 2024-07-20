@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 import pandas as pd
 import Levenshtein
 import os
@@ -14,6 +14,9 @@ class CSVMatcherApp:
         self.col1 = tk.StringVar()
         self.col2 = tk.StringVar()
         
+        self.df1 = None
+        self.df2 = None
+        
         self.create_widgets()
 
     def create_widgets(self):
@@ -26,10 +29,12 @@ class CSVMatcherApp:
         tk.Button(self.root, text="Browse", command=self.browse_file2).grid(row=1, column=2)
         
         tk.Label(self.root, text="Column from File 1:").grid(row=2, column=0, sticky=tk.W)
-        tk.Entry(self.root, textvariable=self.col1).grid(row=2, column=1)
+        self.col1_dropdown = ttk.Combobox(self.root, textvariable=self.col1)
+        self.col1_dropdown.grid(row=2, column=1)
         
         tk.Label(self.root, text="Column from File 2:").grid(row=3, column=0, sticky=tk.W)
-        tk.Entry(self.root, textvariable=self.col2).grid(row=3, column=1)
+        self.col2_dropdown = ttk.Combobox(self.root, textvariable=self.col2)
+        self.col2_dropdown.grid(row=3, column=1)
         
         tk.Button(self.root, text="Match", command=self.match_files).grid(row=4, column=0, columnspan=3)
     
@@ -37,11 +42,27 @@ class CSVMatcherApp:
         file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
         if file_path:
             self.file1_path.set(file_path)
+            self.load_columns(file_path, self.col1_dropdown)
     
     def browse_file2(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
         if file_path:
             self.file2_path.set(file_path)
+            self.load_columns(file_path, self.col2_dropdown)
+    
+    def load_columns(self, file_path, dropdown):
+        try:
+            df = pd.read_csv(file_path)
+            columns = df.columns.tolist()
+            dropdown['values'] = columns
+            dropdown.set('')
+            
+            if dropdown == self.col1_dropdown:
+                self.df1 = df
+            else:
+                self.df2 = df
+        except Exception as e:
+            messagebox.showerror("Error", f"Error reading file: {e}")
     
     def match_files(self):
         file1_path = self.file1_path.get()
@@ -54,15 +75,20 @@ class CSVMatcherApp:
             return
         
         try:
-            df1 = pd.read_csv(file1_path)
-            df2 = pd.read_csv(file2_path)
+            if self.df1 is None:
+                self.df1 = pd.read_csv(file1_path)
+            if self.df2 is None:
+                self.df2 = pd.read_csv(file2_path)
         except Exception as e:
             messagebox.showerror("Error", f"Error reading files: {e}")
             return
         
-        if col1 not in df1.columns or col2 not in df2.columns:
+        if col1 not in self.df1.columns or col2 not in self.df2.columns:
             messagebox.showerror("Error", "Invalid column names")
             return
+        
+        df1 = self.df1.copy()
+        df2 = self.df2.copy()
         
         df1['Matched'] = None
         df1['Distance'] = None
