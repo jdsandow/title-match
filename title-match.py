@@ -83,7 +83,7 @@ class CSVMatcherApp:
             messagebox.showerror("Error", f"Error reading file: {e}")
     
     def process_cutoff(self, text, words):
-        cut_positions = [text.lower().find(word.strip().lower()) for word in words.split(',') if word.strip().lower() in text.lower()]
+        cut_positions = [text.lower().find(f" {word.strip().lower()}") for word in words.split(',') if f" {word.strip().lower()}" in text.lower()]
         if cut_positions:
             cutoff_index = min(cut_positions)
             text = text[:cutoff_index]
@@ -147,29 +147,40 @@ class CSVMatcherApp:
         
         for i, value1 in df1['cleaned_one'].items():
             distances = df2['cleaned_two'].apply(lambda x: Levenshtein.distance(value1, x))
-            min_distances = distances.nsmallest(2)
-            matches = df2.loc[min_distances.index]
+            exact_matches = df2[distances == 0]
+            close_matches = df2[(distances > 0) & (distances <= 5)]
             
-            if min_distances.iloc[0] == 0:
-                best_match = matches.iloc[0][col2]
+            if len(exact_matches) == 1:
+                best_match = exact_matches.iloc[0][col2]
                 min_distance = 0
-                value_from_file2 = matches.iloc[0][value_col2]
-            elif min_distances.iloc[0] <= 5 and len(min_distances) > 1 and min_distances.iloc[1] <= 5:
-                options = matches.apply(lambda row: f"{row[col2]}: {row.to_dict()}", axis=1).tolist()
+                value_from_file2 = exact_matches.iloc[0][value_col2]
+            elif len(exact_matches) > 1:
+                options = exact_matches.apply(lambda row: f"{row[col2]}: {row.to_dict()}", axis=1).tolist()
                 best_match_str = self.prompt_user_choice(value1, options)
                 if best_match_str:
                     best_match_index = options.index(best_match_str)
-                    best_match = matches.iloc[best_match_index][col2]
-                    min_distance = min_distances.iloc[best_match_index]
-                    value_from_file2 = matches.iloc[best_match_index][value_col2]
+                    best_match = exact_matches.iloc[best_match_index][col2]
+                    min_distance = 0
+                    value_from_file2 = exact_matches.iloc[best_match_index][value_col2]
                 else:
                     best_match = None
                     min_distance = None
                     value_from_file2 = None
-            elif min_distances.iloc[0] <= 5:
-                best_match = matches.iloc[0][col2]
-                min_distance = min_distances.iloc[0]
-                value_from_file2 = matches.iloc[0][value_col2]
+            elif len(close_matches) > 0:
+                # Align distances with close_matches
+                close_matches['Distance'] = distances[close_matches.index]
+                close_matches = close_matches.sort_values(by='Distance').head(25)
+                options = close_matches.apply(lambda row: f"{row[col2]}: {row.to_dict()}", axis=1).tolist()
+                best_match_str = self.prompt_user_choice(value1, options)
+                if best_match_str:
+                    best_match_index = options.index(best_match_str)
+                    best_match = close_matches.iloc[best_match_index][col2]
+                    min_distance = close_matches.iloc[best_match_index]['Distance']
+                    value_from_file2 = close_matches.iloc[best_match_index][value_col2]
+                else:
+                    best_match = None
+                    min_distance = None
+                    value_from_file2 = None
             else:
                 best_match = None
                 min_distance = None
